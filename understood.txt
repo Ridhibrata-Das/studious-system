@@ -1,0 +1,193 @@
+Positron-IET — System Understanding Document
+
+Overview
+Positron-IET is a Next.js 13 (App Router) TypeScript web application for a smart agriculture dashboard. It ingests environmental and soil sensor telemetry (ThingSpeak), fetches weather data (Open‑Meteo), generates alerts via SMS (Twilio), provides AI assistance via multimodal multilingual agentic LLM using vision transformers for plant anomaly detection (Google Gemini), and includes real‑time device control via MQTT. The system features "Balaram AI" for real‑time multimodal conversations and "Bhoomi Dut" for agentic AI calling capabilities. The UI is built with Tailwind CSS and a rich set of headless components (Radix UI/Shadcn). An ElevenLabs conversational widget is included on the main dashboard.
+
+Key Capabilities
+- Sensor monitoring: Temperature, humidity, soil moisture, NPK levels — live and historical charts with range selection and polling.
+- Weather integration: Current weather from Open‑Meteo, location detection via browser geolocation and optional OpenCage reverse geocoding.
+- Alerting: Soil moisture threshold alerts trigger SMS notifications via a server API route backed by Twilio.
+- Device control: Water pump control via MQTT with Manual/Automatic modes and soil moisture-based auto-cut functionality.
+- AI assistant:
+  - Balaram AI: Real‑time multimodal multilingual agentic LLM using vision transformers for plant anomaly detection; streams microphone PCM and periodic camera frames; receives streamed PCM audio, plays it, and transcribes model responses back into text using Gemini.
+  - Bhoomi Dut: Agentic AI calling feature using Omnidim API for voice-based agricultural assistance and recommendations.
+  - Chat service: Stateless prompt‑to‑completion flow over Gemini for text responses, with seeded conversation history in Bengali/English.
+  - ElevenLabs widget: Embeddable voice assistant component included on dashboard page.
+
+Architecture
+- Framework: Next.js 13.5 (App Router) with TypeScript, React 18, Tailwind CSS.
+- UI: Shadcn/Radix components (buttons, cards, dialogs, etc.), Lucide icons, Recharts for data visualization, Sonner for toasts.
+- App routes and layouts:
+  - app/layout.tsx: Global layout with top navigation, Toaster, and ElevenLabs widget script injection.
+  - app/page.tsx: Marketing/landing page composed of section components in `components/sections/*` and a `Header`.
+  - app/dashboard/layout.tsx: Client layout providing a responsive sidebar with navigation to Dashboard, Sensors, Alerts, Recommendations, and Balaram AI.
+  - app/dashboard/page.tsx: Main dashboard — shows current weather, current soil moisture, trends, charts for soil moisture/temperature/humidity, location detection, and embeds ElevenLabs widget.
+  - app/dashboard/sensors/page.tsx: Dedicated charts page for historical time‑series (temperature, humidity, soil moisture, NPK) with selectable time ranges, polling, and water pump control via MQTT.
+  - app/dashboard/alerts/page.tsx: Client UI to view and mock‑configure alert thresholds and enable/disable flags (local state only; not persisted server‑side).
+  - app/dashboard/recommendations/page.tsx: Static/mock AI recommendations list with priority and category badges.
+  - app/api/alerts/route.ts: Server route handling POSTs to send SMS alerts via Twilio when soil moisture is out of range.
+  - app/api/pump/route.ts: Server route for MQTT-based water pump control with Manual/Automatic modes.
+  - app/api/omnidim/call/route.ts: Server route for Bhoomi Dut agentic AI calling via Omnidim API.
+
+Data Integrations and Services
+- Weather (Open‑Meteo):
+  - `lib/weather.ts` fetches current temperature and humidity; uses a 5s AbortController timeout and Next.js cache revalidation (~5 minutes). Humidity is selected from the current hour index of the hourly series.
+- ThingSpeak (sensor telemetry):
+  - `lib/thingspeak.ts` builds channel endpoint URLs using `NEXT_PUBLIC_THINGSPEAK_CHANNEL_ID` and `NEXT_PUBLIC_THINGSPEAK_READ_API_KEY`.
+  - `fetchSoilMoistureData(range)`: fetches feeds, parses numeric fields, returns current reading, time‑series history, and a percentage trend vs. previous value. Caches for 30s and enforces a 5s timeout.
+  - `fetchThingSpeakHistory(range)`: returns simplified history for charting with range‑dependent result counts.
+  - `fetchNPKData(range)`: fetches NPK sensor data (Nitrogen, Phosphorus, Potassium) with time series.
+  - `fetchCurrentNPK()`: returns latest NPK readings with trend analysis.
+- MQTT (device control):
+  - `app/api/pump/route.ts` provides MQTT-based water pump control using HiveMQ Cloud broker.
+  - Supports Manual/Automatic modes with soil moisture-based auto-cut (ON at ≤10%, OFF at ≥80%).
+  - Uses `mqtt` library for TLS-secured connections to HiveMQ Cloud.
+- Omnidim (agentic AI calling):
+  - `app/api/omnidim/call/route.ts` provides Bhoomi Dut voice calling capabilities.
+  - Dispatches calls via Omnidim API with configurable agent and phone numbers.
+- Twilio (SMS):
+  - `lib/twilio.ts` posts to Twilio REST API using `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_TO_PHONE`. Sender number is hardcoded (`+919330248225`) and must be replaced with a valid Twilio number for production.
+- OpenCage (reverse geocoding, optional):
+  - In `app/dashboard/page.tsx`, `getLocationName` requires `NEXT_PUBLIC_OPENCAGE_API_KEY`. It validates returned geometry proximity (≤1 km) and composes a human‑readable label from address components. Fallback: coordinate string.
+
+AI Subsystem (Balaram AI & Bhoomi Dut)
+- Goal: Real‑time, multimodal multilingual agentic LLM using vision transformers for plant anomaly detection and agricultural support in India.
+- Components:
+  - `app/dashboard/balaram-ai/components/CameraPreview.tsx` (client)
+    - Captures webcam video (drawn to canvas and JPEG encoded every 1s) and microphone audio (16 kHz mono PCM via AudioWorklet under `/public/worklets/audio-processor.js`).
+    - Streams audio as base64 PCM chunks and frames as base64 JPEG over Gemini WebSocket when connected.
+    - Displays connection/speaking state and input/output audio levels; provides controls to start/stop and switch camera.
+  - `app/dashboard/balaram-ai/services/geminiWebSocket.ts` (client)
+    - Connects to `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=...` with `NEXT_PUBLIC_GEMINI_API_KEY`.
+    - Sends a setup message targeting model `models/gemini-2.0-flash-exp`, with system instruction tuned for short, helpful, agriculture‑focused, natural speech responses with plant anomaly detection capabilities.
+    - Sends realtime input chunks with appropriate `mime_type` (`audio/pcm` or `image/jpeg`).
+    - Handles streamed `audio/pcm;rate=24000` model output: decodes to Float32, queues and plays via WebAudio at 24 kHz, emits output audio levels, and marks turn completion.
+    - Upon turn completion: aggregates accumulated PCM, converts to WAV (`pcmToWav`), calls `TranscriptionService.transcribeAudio` to obtain a text transcription/answer, and passes it up via callback.
+  - `app/dashboard/balaram-ai/services/transcriptionService.ts`
+    - Uses Gemini `gemini-2.0-flash` to transcribe inline audio data and then routes the transcription into `GeminiChatService.generateResponse` for a text answer.
+  - `app/dashboard/balaram-ai/services/geminiChatService.ts`
+    - Creates a `GoogleGenerativeAI` model client and maintains a seeded conversation history (Bengali/English examples and instruction prompts). Generates text responses from new user input and appends them to the conversation history.
+  - `app/dashboard/balaram-ai/services/sensorDataService.ts`
+    - Provides real-time sensor data integration for AI context including location, humidity, soil moisture, and NPK levels.
+  - Audio utilities:
+    - `app/dashboard/balaram-ai/utils/audio.ts` converts base64 PCM to WAV (client‑side) using Blob/FileReader and provides helpers for playback and input audio level calculations.
+    - `app/dashboard/balaram-ai/utils/audioUtils.ts` contains an alternative, header‑prepended PCM→WAV routine used by the WebSocket service.
+- Bhoomi Dut (Agentic AI Calling):
+  - `app/api/omnidim/call/route.ts` provides voice-based agricultural assistance via Omnidim API.
+  - Dispatches calls to configured phone numbers with agricultural context and recommendations.
+  - Uses environment variables for Omnidim configuration (API key, agent ID, phone numbers).
+
+Dashboards and UX
+- Main dashboard:
+  - Location: Browser geolocation with high‑accuracy options and robust error handling; updates weather and shows a human‑readable location if OpenCage is available. Displays status toasts for success/info/error.
+  - Sensor cards: Temperature, humidity, soil moisture with trend badges and a moisture status classification (Good/Moderate/Danger) mapping to color semantics.
+  - Charts: Recharts line charts for soil moisture, temperature, and humidity with brush, legend, and time range selector.
+  - Alerts: If soil moisture >80% or <20%, triggers `/api/alerts` to send SMS and shows a toast message.
+  - AI assistant widget: `<elevenlabs-convai>` component is embedded; the enabling script is loaded in `app/layout.tsx` as a lazy `next/script`.
+- Sensors page: Similar charts focused on time‑series browsing with polling intervals derived from selected range. Includes water pump control with Manual/Automatic modes and soil moisture-based auto-cut functionality.
+- Alerts page: UI for toggling and setting thresholds locally; server integration for storing thresholds is not implemented in this repo.
+- Recommendations page: Mock list of prioritized recommendations; no back‑end coupling.
+
+Configuration and Environment
+- Required environment variables:
+  - Public (exposed to browser via NEXT_PUBLIC_*):
+    - `NEXT_PUBLIC_GEMINI_API_KEY`: Google Generative AI API key for Gemini (WebSocket and REST clients).
+    - `NEXT_PUBLIC_THINGSPEAK_CHANNEL_ID`, `NEXT_PUBLIC_THINGSPEAK_READ_API_KEY`: ThingSpeak channel to read telemetry.
+    - `NEXT_PUBLIC_OPENCAGE_API_KEY` (optional): For reverse geocoding user coordinates.
+    - `NEXT_PUBLIC_OMNIDIM_BASE_URL`, `NEXT_PUBLIC_OMNIDIM_API_KEY`, `NEXT_PUBLIC_OMNIDIM_AGENT_ID`, `NEXT_PUBLIC_OMNIDIM_FROM_NUMBER_ID`: Omnidim configuration for Bhoomi Dut calling.
+  - Server‑side:
+    - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_TO_PHONE`: Twilio credentials and destination number for SMS.
+    - `MQTT_URL`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_TOPIC`: MQTT broker configuration for water pump control.
+- Build/runtime:
+  - `next.config.js` disables build‑time ESLint blocking and sets images to `unoptimized: true` (no Next Image Optimization pipeline).
+  - Tailwind config (`tailwind.config.ts`) defines CSS variables for theming and includes `tailwindcss-animate` plugin.
+  - TypeScript config (`tsconfig.json`) uses strict mode, moduleResolution `bundler`, React JSX preserve, and path alias `@/*`.
+
+Data Flow Summary
+- Telemetry:
+  1) Client pages call `lib/thingspeak.ts` functions.
+  2) Data retrieved from ThingSpeak feeds, parsed and shaped into `ThingSpeakData[]`, `NPKData[]`, and current `SoilMoistureData`.
+  3) UI renders cards and charts; polling intervals adjust by selected time range.
+- Weather and Location:
+  1) Browser geolocation obtains coordinates; optional OpenCage reverse geocoding provides a human‑readable label.
+  2) `lib/weather.ts` queries Open‑Meteo for current values and displays them.
+- Alerts:
+  1) Threshold logic on the client detects out‑of‑range soil moisture.
+  2) POST to `/api/alerts` sends SMS via `lib/twilio.ts` and responds with JSON.
+- Water Pump Control:
+  1) Client toggles pump via POST to `/api/pump` with state ('ON'/'OFF').
+  2) API publishes MQTT message to configured broker topic.
+  3) NodeMCU subscribes to topic and controls relay accordingly.
+  4) Manual mode: user controls pump with auto-cut at 80% soil moisture.
+  5) Automatic mode: pump auto-starts at ≤10% and stops at ≥80% soil moisture.
+- Balaram AI (real‑time):
+  1) Client starts camera/mic, sets up AudioWorklet for 16 kHz PCM; creates a Gemini WebSocket session with 24 kHz audio output modality.
+  2) Streams audio PCM and periodic JPEG frames to Gemini for plant anomaly detection.
+  3) Receives streaming PCM audio; plays it; collects complete turn PCM, converts to WAV; transcribes and generates final text via Gemini.
+  4) Emits transcription to the parent UI via callback.
+- Bhoomi Dut (Agentic AI Calling):
+  1) Client triggers call via POST to `/api/omnidim/call` with phone number.
+  2) API dispatches call via Omnidim with agricultural context and recommendations.
+
+Security and Privacy Considerations
+- API keys: Public keys (`NEXT_PUBLIC_*`) are exposed to the browser; keep least privilege and rate limiting at the provider level.
+- Twilio: Replace the hardcoded `From` number with a verified Twilio number; never commit credentials. Securely inject server‑side secrets.
+- Web permissions: Camera/microphone access is user‑granted and can fail; code handles errors and cleans up media tracks and WebAudio resources.
+- Network resilience: Weather/ThingSpeak requests use timeouts and error handling; Gemini WebSocket reconnects on unclean closures after setup; MQTT client handles reconnection automatically.
+
+Limitations and TODOs
+- Alerts thresholds are not persisted or enforced server‑side; they are UI only.
+- Recommendations are mock data; no back‑end inference pipeline exists here.
+- No auth/user management; dashboard routes are public in this repo.
+- Image streaming interval is a fixed 1s; no adaptive bitrate/quality control.
+- Mixed audio sample rates (16 kHz input vs. 24 kHz output) are intentional to match model expectations; ensure provider compatibility.
+- `next/image` optimization disabled; consider enabling a CDN if needed.
+
+Tech Stack
+- Core: Next.js 13.5, React 18, TypeScript 5
+- Styling: Tailwind CSS, tailwindcss‑animate
+- UI: Radix UI/Shadcn components, Lucide icons, Sonner toasts
+- Charts: Recharts
+- AI: @google/generative‑ai (Gemini REST + WS bidi streaming), Omnidim (agentic calling)
+- Voice: ElevenLabs widget
+- Data: ThingSpeak (REST), Open‑Meteo (REST)
+- Device Control: MQTT (HiveMQ Cloud)
+- Notifications: Twilio SMS (REST)
+
+How to Run
+- Set environment variables per “Configuration and Environment”. Ensure Twilio sender is valid.
+- Install dependencies: `npm install`
+- Dev: `npm run dev`
+- Build: `npm run build` and `npm start`
+
+Operational Notes
+- The `public/worklets/audio-processor.js` file is required for microphone PCM capture via AudioWorklet.
+- Network requests rely on CORS‑friendly public APIs; ensure keys are provisioned and not rate‑limited for demos.
+- If OpenCage key is absent, geolocation still works but displays coordinates instead of address text.
+
+File Map (selected)
+- app/layout.tsx — Global layout/nav, Toaster, ElevenLabs script
+- app/page.tsx — Marketing landing page
+- app/dashboard/layout.tsx — Sidebar layout and navigation
+- app/dashboard/page.tsx — Main dashboard (location, weather, sensors, charts, alerts, AI widget)
+- app/dashboard/sensors/page.tsx — Sensor history charts + water pump control
+- app/dashboard/alerts/page.tsx — Alert thresholds UI (local state)
+- app/dashboard/recommendations/page.tsx — Mock recommendations
+- app/dashboard/balaram-ai/components/CameraPreview.tsx — Media capture UI and streaming control
+- app/dashboard/balaram-ai/services/geminiWebSocket.ts — Bidi Gemini WS client and audio handling
+- app/dashboard/balaram-ai/services/transcriptionService.ts — Audio transcription via Gemini + response generation
+- app/dashboard/balaram-ai/services/geminiChatService.ts — Text chat using Gemini with seeded history
+- app/dashboard/balaram-ai/services/sensorDataService.ts — Real-time sensor data integration for AI context
+- app/dashboard/balaram-ai/utils/audio.ts — PCM→WAV, playback, audio level helpers
+- app/dashboard/balaram-ai/utils/audioUtils.ts — Alternate PCM→WAV header routine
+- app/api/alerts/route.ts — Twilio SMS alerts API
+- app/api/pump/route.ts — MQTT water pump control API
+- app/api/omnidim/call/route.ts — Bhoomi Dut agentic AI calling API
+- lib/thingspeak.ts — ThingSpeak data adapters (current, history, trend, NPK)
+- lib/weather.ts — Open‑Meteo current weather fetcher
+- lib/twilio.ts — Twilio SMS sender
+- tailwind.config.ts — Tailwind theme and scanning config
+- tsconfig.json — TS options and path aliases
+- next.config.js — Next.js config (ESLint ignore, unoptimized images)
+
+End of document.

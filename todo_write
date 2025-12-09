@@ -1,0 +1,42 @@
+[
+  {
+    "content": "Backup the current landing page and layout files.",
+    "status": "pending",
+    "id": "backup-current-landing"
+  },
+  {
+    "content": "Copy and adapt the e-bhoomi landing page (page.tsx) to the main app, replacing the current landing page.",
+    "status": "pending",
+    "id": "replace-main-page"
+  },
+  {
+    "content": "Port and integrate the Navigation and Footer components from e-bhoomi, ensuring navigation and footer match the new design.",
+    "status": "pending",
+    "id": "port-navigation-footer"
+  },
+  {
+    "content": "Port and integrate all landing page sections (Hero, CoreFeatures, Features, WhyChooseUs, Testimonials, FAQ) from e-bhoomi.",
+    "status": "pending",
+    "id": "port-landing-sections"
+  },
+  {
+    "content": "Port and adapt all required UI components (Button, Input, etc.) and utilities (cn, etc.) from e-bhoomi.",
+    "status": "pending",
+    "id": "port-ui-components"
+  },
+  {
+    "content": "Ensure all required dependencies (lucide-react, class-variance-authority, tailwind-merge, clsx, @lottiefiles/dotlottie-react) are installed and compatible.",
+    "status": "pending",
+    "id": "check-dependencies"
+  },
+  {
+    "content": "Port and adapt global styles and animations from e-bhoomi (globals.css, etc.).",
+    "status": "pending",
+    "id": "port-global-styles"
+  },
+  {
+    "content": "Test the new landing page thoroughly to ensure all animations, navigation, and sections work as expected.",
+    "status": "pending",
+    "id": "test-landing-page"
+  }
+]
