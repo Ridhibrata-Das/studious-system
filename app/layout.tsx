@@ -66,7 +66,7 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#0a84ff" />
+        <meta name="theme-color" content="#16a34a" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
       <body className={`${inter.variable} ${poppins.variable} antialiased`}>
