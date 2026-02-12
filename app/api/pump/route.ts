@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 
 // Configuration with fallbacks from user request
 const CONFIG = {
-  channelId: process.env.NEXT_PUBLIC_THINGSPEAK_CHANNEL_ID || '2647422',
-  writeKey: process.env.THINGSPEAK_WRITE_API_KEY || 'D3VG7N7T222SGT28',
+  channelId: process.env.THINKSPEAK_PUMP_CHANNEL_ID || '2647422',
+  writeKey: process.env.THINKSPEAK_PUMP_KEY_WRITE || 'D3VG7N7T222SGT28',
   readKey: process.env.NEXT_PUBLIC_THINGSPEAK_READ_API_KEY || '1IND2YTTTRS3WCNY',
   pumpField: process.env.THINGSPEAK_PUMP_FIELD || '8'
 };
@@ -24,11 +24,15 @@ export async function POST(req: Request) {
     }
 
     // Write to ThingSpeak
-    const url = `https://api.thingspeak.com/update.json?api_key=${CONFIG.writeKey}&field${CONFIG.pumpField}=${desiredValue}`;
+    const tsUrl = 'https://api.thingspeak.com/update.json';
+    const bodyParams = new URLSearchParams();
+    bodyParams.append('api_key', CONFIG.writeKey);
+    bodyParams.append(`field${CONFIG.pumpField}`, String(desiredValue));
 
-    const response = await fetch(url, {
+    const response = await fetch(tsUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' } // ThingSpeak often prefers this or just query params
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: bodyParams.toString()
     });
 
     const text = await response.text();
