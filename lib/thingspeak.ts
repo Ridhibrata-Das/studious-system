@@ -1,3 +1,4 @@
+// cspell:ignore THINGSPEAK
 export interface SoilMoistureData {
   soilMoisture: number;
   time: string;
@@ -23,6 +24,7 @@ export interface ThingSpeakResponse {
     field1: string; // soil moisture
     field2: string; // temperature
     field3: string; // humidity
+    field4: string; // ratio
     field5: string; // nitrogen (N)
     field6: string; // phosphorus (P)
     field7: string; // potassium (K)
@@ -55,7 +57,7 @@ const getThingSpeakUrl = (range: string) => {
 
   const results = getResultCount(range);
   const url = `https://api.thingspeak.com/channels/${THINGSPEAK_CHANNEL_ID}/feeds.json?api_key=${THINGSPEAK_API_KEY}&results=${results}`;
-  
+
   console.log('ThingSpeak URL:', url.replace(THINGSPEAK_API_KEY, '***HIDDEN***'));
   return url;
 };
@@ -82,7 +84,7 @@ export const fetchSoilMoistureData = async (range: string = '24h'): Promise<{
 }> => {
   try {
     console.log(`Fetching soil moisture data for range: ${range}`);
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // Increased timeout to 10s
 
@@ -90,7 +92,7 @@ export const fetchSoilMoistureData = async (range: string = '24h'): Promise<{
       signal: controller.signal,
       next: { revalidate: 30 } // Cache for 30 seconds
     });
-    
+
     clearTimeout(timeoutId);
 
     if (!response.ok) {
@@ -105,9 +107,9 @@ export const fetchSoilMoistureData = async (range: string = '24h'): Promise<{
 
     const data = await response.json();
     console.log('ThingSpeak raw response:', data);
-    
+
     const feeds = data.feeds as ThingSpeakResponse['feeds'];
-    
+
     if (!feeds || feeds.length === 0) {
       console.warn('No feeds data available from ThingSpeak');
       throw new Error('No data available from ThingSpeak. The channel might be empty or the API key might be invalid.');
@@ -173,10 +175,10 @@ export const fetchSoilMoistureData = async (range: string = '24h'): Promise<{
 export async function fetchThingSpeakHistory(timeRange: string = '24h'): Promise<ThingSpeakData[]> {
   try {
     console.log(`Fetching ThingSpeak history for range: ${timeRange}`);
-    
+
     const channelId = process.env.NEXT_PUBLIC_THINGSPEAK_CHANNEL_ID;
     const apiKey = process.env.NEXT_PUBLIC_THINGSPEAK_READ_API_KEY;
-    
+
     if (!channelId || !apiKey) {
       console.error('ThingSpeak configuration missing in fetchThingSpeakHistory');
       throw new Error('ThingSpeak configuration missing. Please check environment variables.');
@@ -184,7 +186,7 @@ export async function fetchThingSpeakHistory(timeRange: string = '24h'): Promise
 
     const resultsCount = getResultCount(timeRange);
     const url = `https://api.thingspeak.com/channels/${channelId}/feeds.json?api_key=${apiKey}&results=${resultsCount}`;
-    
+
     console.log('ThingSpeak history URL:', url.replace(apiKey, '***HIDDEN***'));
 
     const response = await fetch(url, {
@@ -203,7 +205,7 @@ export async function fetchThingSpeakHistory(timeRange: string = '24h'): Promise
 
     const data: ThingSpeakResponse = await response.json();
     console.log('ThingSpeak history response:', data);
-    
+
     if (!data.feeds || data.feeds.length === 0) {
       console.warn('No feeds data in ThingSpeak history response');
       return [];
@@ -232,10 +234,10 @@ export async function fetchThingSpeakHistory(timeRange: string = '24h'): Promise
 export async function fetchNPKData(timeRange: string = '24h'): Promise<NPKData[]> {
   try {
     console.log(`Fetching NPK data for range: ${timeRange}`);
-    
+
     const channelId = process.env.NEXT_PUBLIC_THINGSPEAK_CHANNEL_ID;
     const apiKey = process.env.NEXT_PUBLIC_THINGSPEAK_READ_API_KEY;
-    
+
     if (!channelId || !apiKey) {
       console.error('ThingSpeak configuration missing in fetchNPKData');
       throw new Error('ThingSpeak configuration missing. Please check environment variables.');
@@ -243,7 +245,7 @@ export async function fetchNPKData(timeRange: string = '24h'): Promise<NPKData[]
 
     const resultsCount = getResultCount(timeRange);
     const url = `https://api.thingspeak.com/channels/${channelId}/feeds.json?api_key=${apiKey}&results=${resultsCount}`;
-    
+
     console.log('ThingSpeak NPK URL:', url.replace(apiKey, '***HIDDEN***'));
 
     const response = await fetch(url, {
@@ -262,7 +264,7 @@ export async function fetchNPKData(timeRange: string = '24h'): Promise<NPKData[]
 
     const data: ThingSpeakResponse = await response.json();
     console.log('ThingSpeak NPK response:', data);
-    
+
     if (!data.feeds || data.feeds.length === 0) {
       console.warn('No feeds data in ThingSpeak NPK response');
       return [];
@@ -294,9 +296,9 @@ export async function fetchCurrentNPK(): Promise<{
 }> {
   try {
     console.log('Fetching current NPK data');
-    
+
     const npkHistory = await fetchNPKData('24h');
-    
+
     if (npkHistory.length === 0) {
       throw new Error('No NPK data available');
     }
@@ -308,7 +310,7 @@ export async function fetchCurrentNPK(): Promise<{
     // Calculate average trend across all three nutrients
     const currentAvg = (latest.nitrogen + latest.phosphorus + latest.potassium) / 3;
     const previousAvg = (previous.nitrogen + previous.phosphorus + previous.potassium) / 3;
-    
+
     const trend = calculateTrend(currentAvg, previousAvg);
 
     return {
@@ -333,15 +335,15 @@ export async function fetchLatestSensorData(): Promise<ThingSpeakResponse['feeds
     }
 
     const url = `https://api.thingspeak.com/channels/${THINGSPEAK_CHANNEL_ID}/feeds.json?api_key=${THINGSPEAK_API_KEY}&results=1`;
-    
+
     const response = await fetch(url);
-    
+
     if (!response.ok) {
       throw new Error(`ThingSpeak API error: ${response.status}`);
     }
 
     const data: ThingSpeakResponse = await response.json();
-    
+
     if (!data.feeds || data.feeds.length === 0) {
       console.warn('No sensor data available');
       return null;
@@ -352,5 +354,67 @@ export async function fetchLatestSensorData(): Promise<ThingSpeakResponse['feeds
   } catch (error) {
     console.error('Error fetching latest sensor data:', error);
     return null;
+  }
+}
+export interface VitalStatsData {
+  red: number;
+  nir: number;
+  ndvi: number;
+  ratio: number;
+  chlorophyll: number;
+  nitrogen: number;
+  time: string;
+}
+
+export async function fetchVitalStats(timeRange: string = '24h'): Promise<VitalStatsData[]> {
+  try {
+    console.log(`Fetching Vital Stats for range: ${timeRange}`);
+
+    const channelId = process.env.NEXT_PUBLIC_THINGSPEAK_CHANNEL_ID_2;
+    const apiKey = process.env.NEXT_PUBLIC_THINGSPEAK_READ_API_KEY_2;
+
+    if (!channelId || !apiKey) {
+      console.error('ThingSpeak configuration missing for Vital Stats');
+      throw new Error('ThingSpeak configuration missing for Vital Stats (Channel 2).');
+    }
+
+    const resultsCount = getResultCount(timeRange);
+    const url = `https://api.thingspeak.com/channels/${channelId}/feeds.json?api_key=${apiKey}&results=${resultsCount}`;
+
+    console.log('ThingSpeak Vital Stats URL:', url.replace(apiKey, '***HIDDEN***'));
+
+    const response = await fetch(url, {
+      next: { revalidate: 30 }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch Vital Stats: ${response.status}`);
+    }
+
+    const data: ThingSpeakResponse = await response.json();
+
+    if (!data.feeds || data.feeds.length === 0) {
+      return [];
+    }
+
+    const processedData = data.feeds.map(feed => ({
+      red: parseNumericValue(feed.field1),
+      nir: parseNumericValue(feed.field2),
+      ndvi: parseNumericValue(feed.field3),
+      ratio: parseNumericValue(feed.field4),
+      chlorophyll: parseNumericValue(feed.field5),
+      nitrogen: parseNumericValue(feed.field6),
+      time: new Date(feed.created_at).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      })
+    }));
+
+    return processedData;
+
+  } catch (error) {
+    console.error('Error fetching Vital Stats:', error);
+    throw error;
   }
 }
