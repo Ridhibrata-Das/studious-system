@@ -4,7 +4,7 @@ import { pcmToWav } from '../utils/audio';
 import { getGeminiVariables, refreshAllSensorData } from './sensorDataService';
 import { detailAnalysisService, type AnalysisResult } from './detailAnalysisService';
 
-const MODEL = "models/gemini-2.5-flash-native-audio-preview-09-2025";
+const MODEL = "models/gemini-2.5-flash-native-audio-preview-12-2025";
 const API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 const HOST = "generativelanguage.googleapis.com";
 const WS_URL = `wss://${HOST}/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${API_KEY}`;
@@ -412,4 +412,5 @@ export class GeminiWebSocket {
       this.ws = null;
     }
   }
+
 } 
